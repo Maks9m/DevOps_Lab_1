@@ -74,10 +74,14 @@ EOF
 chown root:app /etc/mywebapp/mywebapp.env
 chmod 0640 /etc/mywebapp/mywebapp.env
 
-echo "==> [6/9] Installing systemd unit"
+echo "==> [6/9] Installing systemd socket + service"
+install -m 0644 deploy/mywebapp.socket  /etc/systemd/system/mywebapp.socket
 install -m 0644 deploy/mywebapp.service /etc/systemd/system/mywebapp.service
 systemctl daemon-reload
-systemctl enable --now mywebapp
+# Stop a previously plain-systemd-managed service (if upgrading) before enabling
+# socket activation, so the listen port is free for the socket unit.
+systemctl disable --now mywebapp.service 2>/dev/null || true
+systemctl enable --now mywebapp.socket
 
 echo "==> [7/9] Configuring nginx"
 install -m 0644 deploy/nginx.conf /etc/nginx/sites-available/mywebapp

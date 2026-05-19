@@ -2,7 +2,10 @@
 """Task Tracker — KPI DevOps Lab 1 (V3=2)."""
 
 import argparse
+import os
+import socket
 from html import escape
+from wsgiref.simple_server import WSGIRequestHandler, WSGIServer
 
 import pymysql
 from flask import Flask, abort, jsonify, request
@@ -116,5 +119,17 @@ def mark_done(task_id):
     return jsonify({"id": task_id, "status": "done"})
 
 
+def serve_socket_activated():
+    """Run on the inherited socket from systemd (FD 3 = SD_LISTEN_FDS_START)."""
+    server = WSGIServer(("", 0), WSGIRequestHandler, bind_and_activate=False)
+    server.socket = socket.socket(fileno=3, family=socket.AF_INET, type=socket.SOCK_STREAM)
+    server.server_address = server.socket.getsockname()
+    server.set_app(app)
+    server.serve_forever()
+
+
 if __name__ == "__main__":
-    app.run(host=ARGS.host, port=ARGS.port)
+    if os.environ.get("LISTEN_FDS"):
+        serve_socket_activated()
+    else:
+        app.run(host=ARGS.host, port=ARGS.port)

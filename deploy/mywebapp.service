@@ -1,6 +1,7 @@
 [Unit]
 Description=mywebapp (Task Tracker)
-After=network.target mariadb.service
+Requires=mywebapp.socket
+After=network.target mariadb.service mywebapp.socket
 Requires=mariadb.service
 
 [Service]
@@ -9,8 +10,5 @@ User=app
 Group=app
 EnvironmentFile=/etc/mywebapp/mywebapp.env
 ExecStartPre=/usr/bin/python3 /opt/mywebapp/migrate.py --db-host=${DB_HOST} --db-port=${DB_PORT} --db-user=${DB_USER} --db-password=${DB_PASSWORD} --db-name=${DB_NAME}
-ExecStart=/usr/bin/python3 /opt/mywebapp/main.py --host=127.0.0.1 --port=5200 --db-host=${DB_HOST} --db-port=${DB_PORT} --db-user=${DB_USER} --db-password=${DB_PASSWORD} --db-name=${DB_NAME}
+ExecStart=/usr/bin/python3 /opt/mywebapp/main.py --db-host=${DB_HOST} --db-port=${DB_PORT} --db-user=${DB_USER} --db-password=${DB_PASSWORD} --db-name=${DB_NAME}
 Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
