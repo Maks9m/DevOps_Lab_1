@@ -11,7 +11,6 @@ fi
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
-DEFAULT_PASSWORD='12345678'
 
 echo "==> [1/9] Installing packages"
 export DEBIAN_FRONTEND=noninteractive # prevent apt from asking interactive questions
@@ -27,7 +26,8 @@ if ! id teacher &>/dev/null; then
     chage -d 0 teacher
 fi
 if ! id operator &>/dev/null; then
-    useradd -m -s /bin/bash operator
+    getent group operator >/dev/null || groupadd operator
+    useradd -m -s /bin/bash -g operator operator
     echo "operator:${DEFAULT_PASSWORD}" | chpasswd
     chage -d 0 operator
 fi
@@ -94,10 +94,8 @@ echo "==> [9/9] Creating gradebook and locking default user"
 echo 16 > /home/student/gradebook
 chown student:student /home/student/gradebook
 
-# Lock Multipass default user. Done LAST so we don't disrupt ourselves mid-run.
 if id ubuntu &>/dev/null; then
     usermod -L ubuntu
-    rm -f /home/ubuntu/.ssh/authorized_keys
 fi
 
 echo "==> Done. Try:  curl -s http://127.0.0.1/  |  systemctl status mywebapp"
