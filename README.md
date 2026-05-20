@@ -54,6 +54,58 @@ python3 app/main.py --host=127.0.0.1 --port=5200 \
   --db-user=mywebapp --db-password=<pw> --db-name=mywebapp
 ```
 
+## Run with Docker Compose
+
+A `docker-compose.yml` at the repository root orchestrates the three services (MariaDB, Flask app, nginx) plus a one-shot `migrate` job. All services run on a dedicated bridge network `lab_net` (not the default network), and DB data persists in the named volume `mariadb_data` — it survives `docker compose down`, container removal, and host reboot.
+
+### Prerequisites
+
+Docker Desktop (or Docker Engine) with `docker compose` v2.
+
+### Start
+
+```bash
+cp .env.example .env
+# edit .env and set real passwords
+docker compose up -d --build
+docker compose ps                  # mariadb/app/nginx Up; migrate Exited (0)
+```
+
+Only nginx is exposed to the host (port 80). The app and the database are reachable only inside `lab_net`.
+
+### Smoke test
+
+```bash
+curl -s -H 'Accept: application/json' http://localhost/tasks
+curl -s -X POST -H 'Content-Type: application/json' \
+     -d '{"title":"buy milk"}' http://localhost/tasks
+curl -s -H 'Accept: application/json' http://localhost/tasks   # contains "buy milk"
+curl -s -X POST http://localhost/tasks/1/done
+```
+
+### Persistence check
+
+```bash
+# create a task, then:
+docker compose down
+docker compose up -d
+curl -s -H 'Accept: application/json' http://localhost/tasks   # task still present
+```
+
+Inspect the on-disk volume:
+
+```bash
+docker volume inspect devops_lab_1_mariadb_data
+```
+
+To wipe data, use `docker compose down -v` (drops the volume) — otherwise the volume persists across `down`/`up`, container deletion, Docker restart, and host reboot.
+
+### Layout
+
+- `app/Dockerfile` — Python 3.13-slim, layer-friendly (deps before code), non-root user `appuser`.
+- `app/.dockerignore` — keeps the build context tight.
+- `deploy/nginx.docker.conf` — container variant of the nginx config (`proxy_pass http://app:5200` via Docker DNS instead of `127.0.0.1:5200`). The bare-metal `deploy/nginx.conf` is unchanged.
+
 ## Deployment
 
 ### Image and resources
