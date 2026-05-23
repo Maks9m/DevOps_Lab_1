@@ -28,6 +28,7 @@ if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
         -o /etc/apt/keyrings/docker.asc
     chmod a+r /etc/apt/keyrings/docker.asc
 fi
+# shellcheck source=/dev/null
 . /etc/os-release
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
 https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
