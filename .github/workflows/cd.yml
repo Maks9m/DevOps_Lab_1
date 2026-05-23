@@ -1,0 +1,85 @@
+name: cd
+
+# Triggered after CI completes successfully on an annotated-tag push.
+# Filters in the top-level `if` make sure we only deploy from tags that
+# already passed lint + test + build.
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: Deploy & verify
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: [self-hosted, deploy]
+    env:
+      TARGET_HOST: ${{ secrets.TARGET_HOST }}
+      TARGET_USER: ${{ secrets.TARGET_USER }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Checkout repo at the deployed SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.TARGET_SSH_KEY }}" > ~/.ssh/id_lab3
+          chmod 600 ~/.ssh/id_lab3
+          ssh-keyscan -H "$TARGET_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync deploy assets to target
+        run: |
+          rsync -az -e "ssh -i ~/.ssh/id_lab3" \
+            docker-compose.yml \
+            docker-compose.prod.yml \
+            deploy/nginx.conf \
+            deploy/mywebapp-compose.service \
+            deploy/target-setup.sh \
+            "${TARGET_USER}@${TARGET_HOST}:/tmp/mywebapp-deploy/"
+
+      - name: Apply target setup + pull new image
+        run: |
+          ssh -i ~/.ssh/id_lab3 "${TARGET_USER}@${TARGET_HOST}" bash -se <<EOF
+          set -euo pipefail
+          sudo install -d -m 0755 /opt/mywebapp
+          sudo cp /tmp/mywebapp-deploy/docker-compose.yml      /opt/mywebapp/
+          sudo cp /tmp/mywebapp-deploy/docker-compose.prod.yml /opt/mywebapp/
+          sudo install -m 0644 /tmp/mywebapp-deploy/nginx.conf /etc/nginx/sites-available/mywebapp
+          sudo ln -sf /etc/nginx/sites-available/mywebapp /etc/nginx/sites-enabled/mywebapp
+          sudo install -m 0644 /tmp/mywebapp-deploy/mywebapp-compose.service /etc/systemd/system/mywebapp-compose.service
+
+          # Pin this deploy to the tag we are rolling out.
+          sudo sed -i 's/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=${IMAGE_TAG}/' /etc/mywebapp/mywebapp.env
+
+          sudo systemctl daemon-reload
+          sudo nginx -t && sudo systemctl reload nginx
+          sudo systemctl restart mywebapp-compose.service
+          EOF
+
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://${TARGET_HOST}/" || true)
+            if [[ "$code" == "200" ]]; then
+              echo "app responded with 200"; exit 0
+            fi
+            echo "waiting for app... (got $code)"
+            sleep 3
+          done
+          echo "app did not become ready" >&2
+          exit 1
+
+      - name: Run verify.sh
+        run: bash deploy/verify.sh "http://${TARGET_HOST}"
