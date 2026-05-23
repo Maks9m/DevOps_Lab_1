@@ -1,0 +1,23 @@
+# Production override applied on the target node.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences from the dev compose:
+#   * `app` and `migrate` pull a pre-built image from GHCR instead of building.
+#   * `app` publishes 5200 on the loopback only; the host nginx proxies to it.
+#   * The compose `nginx` service is dropped — the host nginx handles routing.
+
+services:
+  migrate:
+    image: ghcr.io/maks9m/devops_lab_1:${APP_IMAGE_TAG:-stable}
+    build: !reset null
+    pull_policy: always
+
+  app:
+    image: ghcr.io/maks9m/devops_lab_1:${APP_IMAGE_TAG:-stable}
+    build: !reset null
+    pull_policy: always
+    ports:
+      - "127.0.0.1:5200:5200"
+
+  nginx: !reset null
