@@ -1,0 +1,11 @@
+[flake8]
+max-line-length = 120
+exclude =
+    .git,
+    .venv,
+    __pycache__,
+    htmlcov,
+    .pytest_cache
+# E203: whitespace before ':' — conflicts with PEP 8 for slices.
+# W503: line break before binary operator — modern PEP 8 prefers it.
+extend-ignore = E203, W503
