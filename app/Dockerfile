@@ -15,3 +15,5 @@ COPY main.py migrate.py ./
 
 USER appuser
 EXPOSE 5200
+
+CMD ["python", "main.py"]
