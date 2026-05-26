@@ -1,0 +1,72 @@
+---
+- name: Install MariaDB server and PyMySQL (for community.mysql)
+  ansible.builtin.apt:
+    name:
+      - mariadb-server
+      - python3-pymysql
+    state: present
+
+- name: Configure MariaDB (bind to VM IP, port {{ db_port }})
+  ansible.builtin.template:
+    src: 50-server.cnf.j2
+    dest: /etc/mysql/mariadb.conf.d/50-server.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart mariadb
+
+- name: Ensure MariaDB is enabled and started
+  ansible.builtin.systemd:
+    name: mariadb
+    enabled: true
+    state: started
+
+- name: Apply pending config changes before any mysql_* task
+  ansible.builtin.meta: flush_handlers
+
+- name: Create application database
+  community.mysql.mysql_db:
+    name: "{{ db_name }}"
+    state: present
+    login_unix_socket: /run/mysqld/mysqld.sock
+
+- name: Create application DB user (grant from worker IP only)
+  community.mysql.mysql_user:
+    name: "{{ db_user }}"
+    host: "{{ worker_ip }}"
+    password: "{{ db_password }}"
+    priv: "{{ db_name }}.*:ALL"
+    state: present
+    login_unix_socket: /run/mysqld/mysqld.sock
+
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: UFW — allow SSH from anywhere (so we don't lock ourselves out)
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+
+- name: UFW — allow MariaDB port from worker VM only
+  community.general.ufw:
+    rule: allow
+    port: "{{ db_port }}"
+    proto: tcp
+    src: "{{ worker_ip }}"
+
+- name: UFW — default deny incoming
+  community.general.ufw:
+    direction: incoming
+    default: deny
+
+- name: UFW — default allow outgoing
+  community.general.ufw:
+    direction: outgoing
+    default: allow
+
+- name: UFW — enable firewall
+  community.general.ufw:
+    state: enabled

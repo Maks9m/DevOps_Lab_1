@@ -1,0 +1,50 @@
+---
+- name: Refresh apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure baseline packages are present
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - python3
+    state: present
+
+- name: Create 'student' user (owner of /home/student/gradebook)
+  ansible.builtin.user:
+    name: student
+    shell: /bin/bash
+    create_home: true
+    state: present
+
+- name: Create 'teacher' user (sudo with password)
+  ansible.builtin.user:
+    name: teacher
+    shell: /bin/bash
+    create_home: true
+    groups: sudo
+    append: true
+    password: "{{ teacher_password_plain | password_hash('sha512', password_salt) }}"
+    update_password: always
+    state: present
+
+- name: Allow password SSH login for teacher only
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-teacher.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Match User teacher
+          PasswordAuthentication yes
+  notify: Reload sshd
+
+- name: Write /home/student/gradebook
+  ansible.builtin.copy:
+    dest: /home/student/gradebook
+    owner: student
+    group: student
+    mode: "0644"
+    content: "{{ student_n }}\n"

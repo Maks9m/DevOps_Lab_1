@@ -1,0 +1,29 @@
+---
+# Variant constants (KPI DevOps Lab 4, N=16 → MariaDB, port 5200)
+student_n: 16
+
+# Application
+app_name: mywebapp
+app_user: app
+app_port: 5200
+app_home: /opt/mywebapp
+app_env_dir: /etc/mywebapp
+app_env_file: /etc/mywebapp/mywebapp.env
+app_source_dir: "{{ playbook_dir }}/../app"
+
+# Database
+db_port: 5200
+db_name: mywebapp
+db_user: mywebapp
+db_password: "lab4-mywebapp-pw"
+db_root_password: "lab4-root-pw"
+
+# User passwords (lab spec: 12345678 for teacher & operator).
+# Hashed at apply-time with a fixed salt → idempotent.
+teacher_password_plain: "12345678"
+operator_password_plain: "12345678"
+password_salt: "lab4kpi"
+
+# Convenience: resolved IPs (used by templates).
+worker_ip: "{{ hostvars[groups['workers'][0]].ansible_host }}"
+db_ip: "{{ hostvars[groups['db'][0]].ansible_host }}"
