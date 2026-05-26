@@ -1,0 +1,26 @@
+---
+- name: Base configuration (all hosts)
+  hosts: all
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Wait for SSH / cloud-init to finish
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+    - name: Gather facts now that SSH is up
+      ansible.builtin.setup:
+  roles:
+    - common
+
+- name: Database (MariaDB on VM2)
+  hosts: db
+  become: true
+  roles:
+    - db
+
+- name: Application + reverse proxy (worker VM)
+  hosts: workers
+  become: true
+  roles:
+    - app
+    - nginx
