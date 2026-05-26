@@ -1,0 +1,6 @@
+ignored:
+  # DL3008 — pinning apt-get versions. We don't apt-get in the app image and
+  # we don't want to pin in the setup scripts either; security updates win.
+  - DL3008
+  # DL3013 — pinning pip package versions. requirements.txt already pins them.
+  - DL3013

@@ -19,11 +19,13 @@ services:
 
   migrate:
     build: ./app
-    command: >
-      python migrate.py
-      --db-host=mariadb --db-port=3306
-      --db-user=${MARIADB_USER} --db-password=${MARIADB_PASSWORD}
-      --db-name=${MARIADB_DATABASE}
+    command: ["python", "migrate.py"]
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      DB_USER: ${MARIADB_USER}
+      DB_PASSWORD: ${MARIADB_PASSWORD}
+      DB_NAME: ${MARIADB_DATABASE}
     depends_on:
       mariadb:
         condition: service_healthy
@@ -33,11 +35,14 @@ services:
 
   app:
     build: ./app
-    command: >
-      python main.py --host=0.0.0.0 --port=5200
-      --db-host=mariadb --db-port=3306
-      --db-user=${MARIADB_USER} --db-password=${MARIADB_PASSWORD}
-      --db-name=${MARIADB_DATABASE}
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: "5200"
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      DB_USER: ${MARIADB_USER}
+      DB_PASSWORD: ${MARIADB_PASSWORD}
+      DB_NAME: ${MARIADB_DATABASE}
     depends_on:
       migrate:
         condition: service_completed_successfully
