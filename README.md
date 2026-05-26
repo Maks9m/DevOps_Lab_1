@@ -52,6 +52,7 @@ python3 app/migrate.py --db-host=127.0.0.1 --db-port=3306 \
 python3 app/main.py --host=127.0.0.1 --port=5200 \
   --db-host=127.0.0.1 --db-port=3306 \
   --db-user=mywebapp --db-password=<pw> --db-name=mywebapp
+  
 ```
 
 ## Run with Docker Compose
