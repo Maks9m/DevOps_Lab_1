@@ -1,0 +1,14 @@
+#cloud-config
+# Minimal first-boot config: create the 'ansible' user with the student's SSH key.
+# apt update + package installs are handled by Ansible's `common` role —
+# doing it here too causes Multipass launches to time out when both VMs hit
+# Ubuntu mirrors in parallel.
+
+users:
+  - default
+  - name: ansible
+    shell: /bin/bash
+    groups: [sudo]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - ${ssh_public_key}
