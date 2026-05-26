@@ -47,12 +47,13 @@ The health endpoints are reachable **only locally** — nginx returns 404 for th
 
 ```bash
 sudo apt-get install -y python3-flask python3-pymysql mariadb-server
-python3 app/migrate.py --db-host=127.0.0.1 --db-port=3306 \
-  --db-user=mywebapp --db-password=<pw> --db-name=mywebapp
-python3 app/main.py --host=127.0.0.1 --port=5200 \
-  --db-host=127.0.0.1 --db-port=3306 \
-  --db-user=mywebapp --db-password=<pw> --db-name=mywebapp
+export DB_HOST=127.0.0.1 DB_PORT=3306 \
+       DB_USER=mywebapp DB_PASSWORD=<pw> DB_NAME=mywebapp
+python3 app/migrate.py
+python3 app/main.py        # listens on $APP_HOST:$APP_PORT (defaults 0.0.0.0:5200)
 ```
+
+> Configuration moved from CLI flags to environment variables in Lab 3 to give compose, systemd, and pytest one shared contract.
 
 ## Run with Docker Compose
 
@@ -192,3 +193,125 @@ sudo cat /home/student/gradebook              # → 16
 # Locked default user
 sudo passwd -S ubuntu                          # status 'L'
 ```
+
+---
+
+# DevOps Lab 3 — CI/CD
+
+Lab 3 puts a full pipeline on top of the Lab 1 project: lint → test → build → push to GHCR → deploy via a self-hosted runner → verify.
+
+## Pipeline architecture
+
+```
+                ┌──────────────────────────────────────────────────────────┐
+                │  GitHub-hosted runners (Ubuntu 24.04)                    │
+push / tag  ──▶ │  .github/workflows/ci.yml                                │
+                │     lint  →  test (MariaDB service)  →  build & push     │
+                │                                            │             │
+                │                                            ▼             │
+                │                                   ghcr.io/maks9m/        │
+                │                                   devops_lab_1:<tag>     │
+                └────────────────────────────────┬─────────────────────────┘
+                                                 │ workflow_run (on success, tags only)
+                                                 ▼
+                                  ┌──────────────────────────────┐
+                                  │  Self-hosted runner VM       │
+                                  │  .github/workflows/cd.yml    │
+                                  │     ssh → rsync → restart    │
+                                  │     systemd → verify.sh      │
+                                  └──────────┬───────────────────┘
+                                             │ ssh (id_lab3 keypair)
+                                             ▼
+                                  ┌──────────────────────────────┐
+                                  │  Target node VM              │
+                                  │  host nginx :80              │
+                                  │  ↳ docker compose (systemd)  │
+                                  │       app  + mariadb         │
+                                  └──────────────────────────────┘
+```
+
+## What each workflow does
+
+### `ci.yml` — triggers: `push` to `main`, annotated `v*` tags, `pull_request` to `main`
+
+| Job | Purpose | Notes |
+| :---- | :---- | :---- |
+| `Lint`  | `flake8` + `yamllint` + `shellcheck` + `hadolint` | Configs: `.flake8`, `.yamllint.yml`, `.hadolint.yaml`. |
+| `Test`  | `pytest` against a MariaDB 11 **service container**, coverage gate at 40 % | Uploads `coverage-html` + `coverage-xml` as artifacts on `main` only. |
+| `Build & push image` | `docker/build-push-action` builds for `linux/amd64` + `linux/arm64`, pushes to GHCR | Skipped on PRs (only `push`). Tags via `docker/metadata-action`. |
+
+Image tag scheme:
+
+| Trigger | Tags pushed |
+| :---- | :---- |
+| `push` to `main`     | `latest`, `sha-<full-commit-sha>` |
+| annotated `v*` tag   | `stable`, `<tag>` |
+
+### `cd.yml` — triggers: `workflow_run` after `ci` completes, gated on `success` + tag push
+
+Runs on `runs-on: [self-hosted, deploy]`. Steps:
+
+1. Checkout repo at the deployed SHA.
+2. Materialise the deploy SSH key from `TARGET_SSH_KEY` secret, add target to `known_hosts`.
+3. `rsync` `docker-compose*.yml`, `nginx.conf`, `mywebapp-compose.service`, `target-setup.sh` to the target.
+4. SSH-exec: install nginx site, reload nginx, pin `APP_IMAGE_TAG` in `/etc/mywebapp/mywebapp.env`, `systemctl restart mywebapp-compose.service`. The systemd unit invokes `docker compose pull && up -d`.
+5. Wait-loop on `GET /` until 200.
+6. Run `deploy/verify.sh http://<target>` from the runner.
+
+## Self-hosted runner & target node
+
+Both are Ubuntu 24.04 VMs. On macOS, easiest with Multipass:
+
+```bash
+# Target node
+multipass launch 24.04 -n target -c 2 -m 2G -d 8G
+multipass transfer deploy/target-setup.sh deploy/nginx.conf \
+                   deploy/mywebapp-compose.service \
+                   docker-compose.yml docker-compose.prod.yml target:/tmp/
+multipass exec target -- sudo bash /tmp/target-setup.sh
+multipass exec target -- sudo cp /tmp/docker-compose.yml /tmp/docker-compose.prod.yml /opt/mywebapp/
+
+# Self-hosted runner
+multipass launch 24.04 -n runner -c 2 -m 4G -d 20G
+multipass transfer deploy/runner-setup.sh runner:/tmp/
+multipass exec runner -- sudo bash /tmp/runner-setup.sh
+# Then register manually (token is one-time, never committed):
+#   multipass shell runner
+#   cd ~/actions-runner
+#   ./config.sh --url <repo-url> --token <PASTE> --labels self-hosted,deploy --unattended
+#   sudo ./svc.sh install ubuntu && sudo ./svc.sh start
+```
+
+After the runner is up, generate the deploy key on the runner and copy the
+public part into the target's `~/.ssh/authorized_keys`, then the **private**
+part into the `TARGET_SSH_KEY` secret.
+
+## GitHub Secrets
+
+| Secret | Purpose |
+| :---- | :---- |
+| `TARGET_HOST`    | IP of the target VM (e.g. `192.168.252.4`). |
+| `TARGET_USER`    | SSH user on the target (`ubuntu`). |
+| `TARGET_SSH_KEY` | Private key the runner uses to SSH into the target. |
+
+The DB password is **not** in Secrets — `target-setup.sh` generates one with `openssl rand -hex 16` and stores it in `/etc/mywebapp/mywebapp.env` on the target. The GHCR pull uses the built-in `GITHUB_TOKEN` from the build job (the package is public for read).
+
+## Release procedure
+
+```bash
+git checkout main && git pull --ff-only
+git tag -a v0.1.0 -m "first release"
+git push origin v0.1.0       # → CI builds stable+v0.1.0 → CD deploys → verify
+```
+
+## Demonstration
+
+| Spec requirement | Evidence |
+| :---- | :---- |
+| PR merged after all checks pass | [PR #2](https://github.com/Maks9m/DevOps_Lab_1/pull/2) (initial CI/CD), [PR #3](https://github.com/Maks9m/DevOps_Lab_1/pull/3) (green demo), [PR #5](https://github.com/Maks9m/DevOps_Lab_1/pull/5), [PR #6](https://github.com/Maks9m/DevOps_Lab_1/pull/6) |
+| PR that **cannot** be merged because checks failed | [PR #4](https://github.com/Maks9m/DevOps_Lab_1/pull/4) — Lint job fails, branch protection blocks merge |
+| Successful deploy log + successful verification | [CD run #26433991945](https://github.com/Maks9m/DevOps_Lab_1/actions/runs/26433991945) (tag `v0.1.0`) |
+| Successful deploy log + **failed** verification | [CD run #26433748124](https://github.com/Maks9m/DevOps_Lab_1/actions/runs/26433748124) (earlier `v0.1.0` attempt — image pulled and stack started, but `verify.sh` failed on two endpoints) |
+| Coverage report | Artifact `coverage-html` on [CI run #26433885478](https://github.com/Maks9m/DevOps_Lab_1/actions/runs/26433885478) |
+
+A consolidated mini-report with screenshots and log excerpts is submitted separately in classroom (GitHub keeps Actions logs for a limited time).
