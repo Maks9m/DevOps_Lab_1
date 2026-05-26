@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+# MariaDB server config — managed by Ansible (roles/db).
+
+[server]
+
+[mysqld]
+user                    = mysql
+pid-file                = /run/mysqld/mysqld.pid
+basedir                 = /usr
+datadir                 = /var/lib/mysql
+tmpdir                  = /tmp
+lc-messages-dir         = /usr/share/mysql
+lc-messages             = en_US
+
+bind-address            = {{ ansible_host }}
+port                    = {{ db_port }}
+
+skip-external-locking
+default_storage_engine  = InnoDB
+character-set-server    = utf8mb4
+collation-server        = utf8mb4_general_ci
+
+[embedded]
+
+[mariadb]
+
+[mariadb-10.6]
