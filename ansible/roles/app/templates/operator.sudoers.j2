@@ -1,0 +1,3 @@
+# {{ ansible_managed }}
+# Restricted sudo for the 'operator' user — service control only.
+operator ALL=(root) NOPASSWD: /bin/systemctl start mywebapp, /bin/systemctl stop mywebapp, /bin/systemctl restart mywebapp, /bin/systemctl status mywebapp, /bin/systemctl reload nginx

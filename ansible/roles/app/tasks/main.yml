@@ -1,0 +1,99 @@
+---
+- name: Create system user 'app' (runs the Flask service)
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    home: "{{ app_home }}"
+    state: present
+
+- name: Create 'operator' user (restricted sudo via sudoers.d/operator)
+  ansible.builtin.user:
+    name: operator
+    shell: /bin/bash
+    create_home: true
+    password: "{{ operator_password_plain | password_hash('sha512', password_salt) }}"
+    update_password: always
+    state: present
+
+- name: Allow password SSH login for operator
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/20-operator.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Match User operator
+          PasswordAuthentication yes
+  notify: Reload sshd app
+
+- name: Install Python runtime + Flask + PyMySQL via apt
+  ansible.builtin.apt:
+    name:
+      - python3
+      - python3-flask
+      - python3-pymysql
+    state: present
+
+- name: Ensure application install dir exists
+  ansible.builtin.file:
+    path: "{{ app_home }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+
+- name: Ensure application config dir exists
+  ansible.builtin.file:
+    path: "{{ app_env_dir }}"
+    state: directory
+    owner: root
+    group: "{{ app_user }}"
+    mode: "0750"
+
+- name: Deploy application source from repo (app/ → {{ app_home }})
+  ansible.builtin.copy:
+    src: "{{ app_source_dir }}/"
+    dest: "{{ app_home }}/"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Restart mywebapp
+
+- name: Render application environment file
+  ansible.builtin.template:
+    src: mywebapp.env.j2
+    dest: "{{ app_env_file }}"
+    owner: root
+    group: "{{ app_user }}"
+    mode: "0640"
+  notify: Restart mywebapp
+
+- name: Install systemd unit for mywebapp
+  ansible.builtin.template:
+    src: mywebapp.service.j2
+    dest: /etc/systemd/system/mywebapp.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart mywebapp
+
+- name: Install operator sudoers (restricted to service control)
+  ansible.builtin.template:
+    src: operator.sudoers.j2
+    dest: /etc/sudoers.d/operator
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Enable and start mywebapp
+  ansible.builtin.systemd:
+    name: mywebapp
+    enabled: true
+    state: started
+    daemon_reload: true
