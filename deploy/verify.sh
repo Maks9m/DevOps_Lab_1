@@ -10,9 +10,10 @@
 #     * GET  /tasks                  -> 200 (JSON list)
 #     * POST /tasks {title}          -> 201 (creates task)
 #     * POST /tasks/<id>/done        -> 200
-#     * GET  /tasks/<id>/done        -> 405 (limit_except)
-#     * PUT  /tasks                  -> 405
+#     * GET  /tasks/<id>/done        -> 403 (limit_except denies)
+#     * PUT  /tasks                  -> 403 (limit_except denies)
 #     * GET  /something/else         -> 404
+
 set -euo pipefail
 
 BASE_URL="${1:-}"
@@ -61,10 +62,10 @@ fi
 
 if [[ -n "$NEW_ID" ]]; then
     check "mark done"             POST   "/tasks/${NEW_ID}/done"   200
-    check "GET on done is 405"    GET    "/tasks/${NEW_ID}/done"   405
+    check "GET on done is 403"    GET    "/tasks/${NEW_ID}/done"   403
 fi
 
-check "PUT /tasks is 405"     PUT    "/tasks"                   405 \
+check "PUT /tasks is 403"     PUT    "/tasks"                   403 \
         -H 'Content-Type: application/json' -d '{}'
 check "unknown path is 404"   GET    "/something/else"          404
 
