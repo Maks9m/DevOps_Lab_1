@@ -315,3 +315,24 @@ git push origin v0.1.0       # → CI builds stable+v0.1.0 → CD deploys → ve
 | Coverage report | Artifact `coverage-html` on [CI run #26433885478](https://github.com/Maks9m/DevOps_Lab_1/actions/runs/26433885478) |
 
 A consolidated mini-report with screenshots and log excerpts is submitted separately in classroom (GitHub keeps Actions logs for a limited time).
+
+---
+
+# DevOps Lab 4 — IaC (Terraform + Ansible)
+
+Lab 4 replaces the single-VM bash deploy with a **two-VM declarative pipeline**: Terraform provisions the VMs via Multipass, Ansible configures them. The Flask app from Lab 1 is reused unchanged — only the runtime config (DB host/port) moves to a templated env file pointing at the dedicated database VM.
+
+## Quick run
+
+```bash
+# Provisioning (single command)
+cd terraform && terraform init && terraform apply -auto-approve && cd ..
+
+# Generate inventory from terraform outputs
+bash scripts/gen-inventory.sh
+
+# Configuration (single command)
+ansible-playbook -i ansible/inventory.ini ansible/site.yml
+```
+
+See **[docs/lab4.md](docs/lab4.md)** for prerequisites, architecture, verification commands, idempotency check, and teardown.
